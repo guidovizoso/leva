@@ -2,6 +2,7 @@
  * Types exposed through the public API
  */
 import type { VectorSettings } from '../components/Vector/vector-types'
+import { StoreType, Data } from './internal'
 import type { BeautifyUnionType, UnionToIntersection } from './utils'
 
 export type RenderFn = (get: (key: string) => any) => boolean
@@ -9,40 +10,55 @@ export type RenderFn = (get: (key: string) => any) => boolean
 /**
  * Utility types that joins a value with its settings
  */
-export type InputWithSettings<V extends unknown, Settings = {}> = {
-  value: V
-} & Settings
+export type InputWithSettings<V extends unknown, Settings = {}, K extends string = 'value'> = {
+  [key in K]: V
+} &
+  Settings
 
 /**
  * Either the raw value, either the value with its settings
  * In other words => value || { value, ...settings }
  */
-export type MergedInputWithSettings<V, Settings = {}> = V | InputWithSettings<V, Settings>
+export type MergedInputWithSettings<V, Settings = {}, K extends string = 'value'> =
+  | V
+  | InputWithSettings<V, Settings, K>
 
 /**
  * Special Inputs
  */
-export enum SpecialInputTypes {
+export enum SpecialInputs {
   BUTTON = 'BUTTON',
   BUTTON_GROUP = 'BUTTON_GROUP',
   MONITOR = 'MONITOR',
   FOLDER = 'FOLDER',
 }
 
+export enum LevaInputs {
+  SELECT = 'SELECT',
+  IMAGE = 'IMAGE',
+  NUMBER = 'NUMBER',
+  COLOR = 'COLOR',
+  STRING = 'STRING',
+  BOOLEAN = 'BOOLEAN',
+  INTERVAL = 'INTERVAL',
+  VECTOR3D = 'VECTOR3D',
+  VECTOR2D = 'VECTOR2D',
+}
+
 export type ButtonInput = {
-  type: SpecialInputTypes.BUTTON
+  type: SpecialInputs.BUTTON
   onClick: () => any
 }
 
 export type ButtonGroupInput = {
-  type: SpecialInputTypes.BUTTON_GROUP
+  type: SpecialInputs.BUTTON_GROUP
   opts: { [title: string]: () => void }
 }
 
 export type MonitorSettings = { graph?: boolean; interval?: number }
 
 export type MonitorInput = {
-  type: SpecialInputTypes.MONITOR
+  type: SpecialInputs.MONITOR
   objectOrFn: React.MutableRefObject<any> | Function
   settings: MonitorSettings
 }
@@ -57,7 +73,7 @@ export type VectorObj = Record<string, number>
 
 export type Vector2dArray = [number, number]
 export type Vector2d = Vector2dArray | VectorObj
-export type Vector2dSettings = VectorSettings<Vector2d, 'x' | 'y'> & { joystick?: boolean; lock?: boolean }
+export type Vector2dSettings = VectorSettings<Vector2d, 'x' | 'y'> & { joystick?: boolean | 'invertY'; lock?: boolean }
 export type Vector2dInput = MergedInputWithSettings<Vector2d, Vector2dSettings>
 
 export type Vector3dArray = [number, number, number]
@@ -84,12 +100,12 @@ type BooleanInput = boolean
 type StringInput = string
 
 export type FolderInput<Schema> = {
-  type: SpecialInputTypes.FOLDER
+  type: SpecialInputs.FOLDER
   schema: Schema
   settings: FolderSettings
 }
 
-export type CustomInput<Value> = Value & { type: string; __customInput: true }
+export type CustomInput<Value> = { type: string; __customInput: Value }
 
 type SchemaItem =
   | InputWithSettings<number, NumberSettings>
@@ -105,16 +121,23 @@ type SchemaItem =
   | StringInput
   | CustomInput<unknown>
 
-type GenericSchemaItemOptions = { render?: RenderFn; label?: string | JSX.Element; hint?: string }
-type ReservedKeys = keyof GenericSchemaItemOptions | 'optional' | '__customInput' | 'type'
+type GenericSchemaItemOptions = {
+  render?: RenderFn
+  label?: string | JSX.Element
+  hint?: string
+}
 
-type StripReservedKeys<K> = BeautifyUnionType<K extends any[] ? K : K extends object ? Omit<K, ReservedKeys> : K>
+export type InputOptions = GenericSchemaItemOptions & {
+  optional?: boolean
+  disabled?: boolean
+  onChange?: (v: any) => void
+}
 
 type SchemaItemWithOptions =
   | number
   | boolean
   | string
-  | (SchemaItem & { optional?: boolean } & GenericSchemaItemOptions)
+  | (SchemaItem & InputOptions)
   | (SpecialInput & GenericSchemaItemOptions)
   | FolderInput<unknown>
 
@@ -127,7 +150,7 @@ export type Schema = Record<string, SchemaItemWithOptions>
 type NotAPrimitiveType = { ____: 'NotAPrimitiveType' }
 
 type PrimitiveToValue<S> = S extends CustomInput<infer I>
-  ? StripReservedKeys<I>
+  ? BeautifyUnionType<I>
   : S extends ImageInput
   ? string | undefined
   : S extends SelectWithValueInput<infer T, infer K>
@@ -152,19 +175,23 @@ type PrimitiveToValue<S> = S extends CustomInput<infer I>
   ? boolean
   : NotAPrimitiveType
 
-export type SchemaToValues<S> = BeautifyUnionType<UnionToIntersection<Leaves<S>>>
+export type SchemaToValues<Schema, IncludeTransient extends boolean = false> = BeautifyUnionType<
+  UnionToIntersection<Leaves<IncludeTransient, Schema>>
+>
 
 type Leaf = { ___leaf: 'leaf' }
 type Join<T, K extends keyof T, P> = Leaf extends P ? { [i in K]: T[K] } : P
 
-export type Leaves<T, P extends string | number | symbol = ''> = {
+export type Leaves<IncludeTransient extends boolean, T, P extends string | number | symbol = ''> = {
   // if it's a folder we run the type check on it's schema key
   0: T extends { schema: infer F } ? { [K in keyof F]: Join<F, K, F[K]> } : never
   1: never
   // if the leaf is an object, we run the type check on each of its keys
-  2: { [i in P]: T extends { optional: true } ? PrimitiveToValue<T> | undefined : PrimitiveToValue<T> }
+  2: {
+    [i in P]: T extends { optional: true } ? PrimitiveToValue<T> | undefined : PrimitiveToValue<T>
+  }
   // recursivity
-  3: { [K in keyof T]: Join<T, K, Leaves<T[K], K>> }[keyof T]
+  3: { [K in keyof T]: Join<T, K, Leaves<IncludeTransient, T[K], K>> }[keyof T]
   // dead end
   4: Leaf
 }[P extends ''
@@ -177,6 +204,10 @@ export type Leaves<T, P extends string | number | symbol = ''> = {
   ? T extends object
     ? 3
     : 4
+  : T extends { onChange: any } // if an input has the onChange property then it's transient and isn't returned
+  ? IncludeTransient extends true
+    ? 2
+    : 1
   : 2]
 
 /**
@@ -212,13 +243,13 @@ export interface Plugin<Input, Value = Input, InternalSettings = {}> {
    * }
    * ```
    */
-  normalize?: (input: Input) => { value: Value; settings?: InternalSettings }
+  normalize?: (input: Input, path: string, data: Data) => { value: Value; settings?: InternalSettings }
   /**
    * Sanitizes the user value before registering it to the store. For
    * example, the Number plugin would santize "3.00" into 3. If the provided
    * value isn't formatted properly, the sanitize function should throw.
    */
-  sanitize?: (value: any, settings: any, prevValue: any) => Value
+  sanitize?: (value: any, settings: InternalSettings, prevValue: any, path: string, store: StoreType) => Value
   /**
    * Formats the value into the value that will be displayed by the component.
    * If the input value of the Number plugin, then format will add proper
@@ -226,6 +257,24 @@ export interface Plugin<Input, Value = Input, InternalSettings = {}> {
    * (Prop name in useInputContext context hook is `displayedValue`)
    */
   format?: (value: any, settings: InternalSettings) => any
+}
+
+export type InputContextProps = {
+  id: string
+  label: string | JSX.Element
+  hint?: string
+  path: string
+  key: string
+  optional: boolean
+  disabled: boolean
+  disable: (flag: boolean) => void
+  storeId: string
+  value: unknown
+  displayValue: unknown
+  onChange: React.Dispatch<any>
+  onUpdate: (v: any | ((v: any) => any)) => void
+  settings: unknown
+  setSettings: (v: any) => void
 }
 
 /**
@@ -239,12 +288,13 @@ export interface Plugin<Input, Value = Input, InternalSettings = {}> {
  * @public
  */
 export interface LevaInputProps<V, InternalSettings = {}, DisplayValue = V> {
-  label: string
   path?: string
   id?: string
+  hint?: string
   displayValue: DisplayValue
   value: V
   onChange: React.Dispatch<any>
-  onUpdate: (v: any | ((_v: any) => any)) => void
+  onUpdate: (v: any | ((v: any) => any)) => void
   settings: InternalSettings
+  setSettings: (v: Partial<InternalSettings>) => void
 }

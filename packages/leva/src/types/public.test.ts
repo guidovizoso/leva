@@ -5,6 +5,7 @@
 
 import { expectType } from 'tsd'
 import { folder } from '../helpers'
+import { createPlugin } from '../plugin'
 import { useControls } from '../useControls'
 
 /**
@@ -12,6 +13,9 @@ import { useControls } from '../useControls'
  */
 expectType<{ a: number }>(useControls({ a: 3 }))
 expectType<[{ a: number }, (value: { a?: number }) => void]>(useControls(() => ({ a: 3 })))
+expectType<[{ a: number }, (value: { a?: number; color?: string }) => void]>(
+  useControls(() => ({ a: 3, color: { value: '#fff', onChange: () => {} } }))
+)
 
 /**
  * options
@@ -81,6 +85,7 @@ expectType<{ a: { width: number; height: number } }>(useControls({ a: { value: {
 // array format
 expectType<{ a: [number, number] }>(useControls({ a: [0, 0] }))
 expectType<{ a: [number, number] }>(useControls({ a: { value: [0, 0] } }))
+expectType<{ a: [number, number] }>(useControls({ a: { value: [0, 0], joystick: 'invertY' } }))
 
 /**
  * Vector3d
@@ -119,3 +124,48 @@ expectType<{
     someFolder: folder({ pos2dArr: [100, 200], innerFolder: folder({ pos3dArr: [0, 0, 0] }) }),
   })
 )
+
+/**
+ * custom plugins
+ */
+
+const nullOrString = createPlugin({
+  normalize: (input: string | null) => ({ value: input }),
+  component: () => null,
+})
+
+const data_nullOrString = useControls({
+  null: nullOrString(null),
+  string: nullOrString('hello'),
+})
+
+expectType<{
+  null: null | string
+  string: null | string
+}>(data_nullOrString)
+
+const nullOrStringObject = createPlugin({
+  normalize: (input: { value: string | null }) => ({ value: input.value }),
+  component: () => null,
+})
+
+const data_nullOrStringObject = useControls({
+  null: nullOrStringObject({ value: null }),
+  string: nullOrStringObject({ value: 'hello' }),
+})
+
+expectType<{
+  null: null | string
+  string: null | string
+}>(data_nullOrStringObject)
+
+const arrayNumber = createPlugin({
+  normalize: (input: number[]) => ({ value: input }),
+  component: () => null,
+})
+
+const data_nullOrNumberArray = useControls({
+  array: arrayNumber([1, 2, 3]),
+})
+
+expectType<{ array: number[] }>(data_nullOrNumberArray)

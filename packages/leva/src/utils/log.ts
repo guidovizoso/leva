@@ -7,6 +7,8 @@ export enum LevaErrors {
   CLIPBOARD_ERROR,
   THEME_ERROR,
   PATH_DOESNT_EXIST,
+  INPUT_TYPE_OVERRIDE,
+  EMPTY_KEY,
 }
 
 const ErrorList = {
@@ -30,6 +32,11 @@ const ErrorList = {
   [LevaErrors.PATH_DOESNT_EXIST]: (path: string) => [
     `Error getting the value at path \`${path}\`. There is probably an error in your \`render\` function.`,
   ],
+  [LevaErrors.PATH_DOESNT_EXIST]: (path: string) => [`Error accessing the value at path \`${path}\``],
+  [LevaErrors.INPUT_TYPE_OVERRIDE]: (path: string, type: string, wrongType: string) => [
+    `Input at path \`${path}\` already exists with type: \`${type}\`. Its type cannot be overridden with type \`${wrongType}\`.`,
+  ],
+  [LevaErrors.EMPTY_KEY]: () => ['Keys can not be empty, if you want to hide a label use whitespace.'],
 }
 
 function _log<T extends LevaErrors>(fn: 'log' | 'warn', errorType: T, ...args: Parameters<typeof ErrorList[T]>) {

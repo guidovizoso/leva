@@ -6,23 +6,23 @@ import { Button } from '../Button'
 import { ButtonGroup } from '../ButtonGroup'
 import { Monitor } from '../Monitor'
 import { useInput } from '../../hooks'
-import { SpecialInputTypes } from '../../types'
+import { SpecialInputs } from '../../types'
 
 type ControlProps = { path: string }
 
 const specialComponents = {
-  [SpecialInputTypes.BUTTON]: Button,
-  [SpecialInputTypes.BUTTON_GROUP]: ButtonGroup,
-  [SpecialInputTypes.MONITOR]: Monitor,
+  [SpecialInputs.BUTTON]: Button,
+  [SpecialInputs.BUTTON_GROUP]: ButtonGroup,
+  [SpecialInputs.MONITOR]: Monitor,
 }
 
 export const Control = React.memo(({ path }: ControlProps) => {
-  const [input, { set, setSettings, disable }] = useInput(path)
+  const [input, { set, setSettings, disable, storeId }] = useInput(path)
   if (!input) return null
 
   const { type, label, key, ...inputProps } = input
 
-  if (type in SpecialInputTypes) {
+  if (type in SpecialInputs) {
     // @ts-expect-error
     const SpecialInputForType = specialComponents[type]
     return <SpecialInputForType label={label} path={path} {...inputProps} />
@@ -36,8 +36,10 @@ export const Control = React.memo(({ path }: ControlProps) => {
   return (
     // @ts-expect-error
     <ControlInput
+      key={storeId + path}
       type={type}
       label={label}
+      storeId={storeId}
       path={path}
       valueKey={key}
       setValue={set}

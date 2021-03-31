@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
 import create from 'zustand'
-import { normalizeInput, join, updateInput, warn, LevaErrors } from './utils'
-import { SpecialInputTypes } from './types'
+import { normalizeInput, join, updateInput, warn, LevaErrors, getUid } from './utils'
+import { SpecialInputs, MappedPaths } from './types'
 import type { Data, FolderSettings, State, StoreType } from './types'
 
 export const Store = (function (this: StoreType) {
   const store = create<State>(() => ({ data: {} }))
 
+  this.storeId = getUid()
   this.useStore = store
   /**
    * Folders will hold the folder settings for the pane.
@@ -22,7 +23,7 @@ export const Store = (function (this: StoreType) {
 
   /**
    * For a given data structure, gets all paths for which inputs have
-   * a reference count superior to zero. This function is used by the
+   * a reference __refCount superior to zero. This function is used by the
    * root pane to only display the inputs that are consumed by mounted
    * components.
    *
@@ -54,7 +55,7 @@ export const Store = (function (this: StoreType) {
       if (
         path in data &&
         // if input is mounted
-        data[path].count > 0 &&
+        data[path].__refCount > 0 &&
         // if it's not included in a hidden folder
         hiddenFolders.every((p) => path.indexOf(p) === -1) &&
         // if its render functions doesn't exists or returns true
@@ -79,7 +80,7 @@ export const Store = (function (this: StoreType) {
 
   /**
    * When the useControls hook unmmounts, it will call this function that will
-   * decrease the count of all the inputs. When an input count reaches 0, it
+   * decrease the __refCount of all the inputs. When an input __refCount reaches 0, it
    * should no longer be displayed in the panel.
    *
    * @param paths
@@ -90,8 +91,8 @@ export const Store = (function (this: StoreType) {
       paths.forEach((path) => {
         if (path in data) {
           const input = data[path]
-          input.count--
-          if (input.count === 0 && input.type in SpecialInputTypes) {
+          input.__refCount--
+          if (input.__refCount === 0 && input.type in SpecialInputs) {
             // this makes sure special inputs such as buttons are properly
             // refreshed. This might need some attention though.
             delete data[path]
@@ -120,22 +121,37 @@ export const Store = (function (this: StoreType) {
   /**
    * Merges the data passed as an argument with the store data.
    * If an input path from the data already exists in the store,
-   * the function doesn't update the data but increments count
+   * the function doesn't update the data but increments __refCount
    * to keep track of how many components use that input key.
    *
+   * Uses depsChanged to trigger a recompute and update inputs
+   * settings if needed.
+   *
    * @param newData the data to update
+   * @param depsChanged to keep track of dependencies
    */
-  this.addData = (newData) => {
+  this.addData = (newData, override) => {
     store.setState((s) => {
       const data = s.data
+      Object.entries(newData).forEach(([path, newInputData]) => {
+        let input = data[path]
 
-      Object.entries(newData).forEach(([path, value]) => {
-        const input = data[path]
-        // if an input already exists at the path, increment
-        // the reference count.
-        if (!!input) input.count++
-        // if not, create a path for the input.
-        else data[path] = { ...value, count: 1 }
+        // If an input already exists compare its values and increase the reference __refCount.
+        if (!!input) {
+          // @ts-ignore
+          const { type, value, ...rest } = newInputData
+          if (type !== input.type) {
+            warn(LevaErrors.INPUT_TYPE_OVERRIDE, type)
+          } else {
+            if (input.__refCount === 0 || override) {
+              Object.assign(input, rest)
+            }
+            // Else we increment the ref count
+            input.__refCount++
+          }
+        } else {
+          data[path] = { ...newInputData, __refCount: 1 }
+        }
       })
 
       // Since we're returning a new object, direct mutation of data
@@ -154,7 +170,7 @@ export const Store = (function (this: StoreType) {
     store.setState((s) => {
       const data = s.data
       //@ts-expect-error (we always update inputs with a value)
-      updateInput(data[path], value)
+      updateInput(data[path], value, path, this)
       return { data }
     })
   }
@@ -207,55 +223,36 @@ export const Store = (function (this: StoreType) {
    * @param schema
    * @param rootPath used for recursivity
    */
-  const _getDataFromSchema = (schema: any, rootPath: string, mappedPaths: Record<string, string>): Data => {
-    const data: any = {}
+  const _getDataFromSchema = (schema: any, rootPath: string, mappedPaths: MappedPaths): Data => {
+    const data: Data = {}
 
-    Object.entries(schema).forEach(([key, input]: [string, any]) => {
+    Object.entries(schema).forEach(([key, rawInput]: [string, any]) => {
+      // if the key is empty, skip schema parsing and prompt an error.
+      if (key === '') return warn(LevaErrors.EMPTY_KEY)
+
       let newPath = join(rootPath, key)
 
       // If the input is a folder, then we recursively parse its schema and assign
       // it to the current data.
-      if (input.type === SpecialInputTypes.FOLDER) {
-        const newData = _getDataFromSchema(input.schema, newPath, mappedPaths)
+      if (rawInput.type === SpecialInputs.FOLDER) {
+        const newData = _getDataFromSchema(rawInput.schema, newPath, mappedPaths)
         Object.assign(data, newData)
 
         // Sets folder preferences if it wasn't set before
-        if (!(newPath in folders)) folders[newPath] = input.settings as FolderSettings
+        if (!(newPath in folders)) folders[newPath] = rawInput.settings as FolderSettings
       } else if (key in mappedPaths) {
         // if a key already exists, prompt an error.
-        warn(LevaErrors.DUPLICATE_KEYS, key, newPath, mappedPaths[key])
+        warn(LevaErrors.DUPLICATE_KEYS, key, newPath, mappedPaths[key].path)
       } else {
-        mappedPaths[key] = newPath
-        // If the input is not a folder, we normalize the input.
-        let _render = undefined
-        let _label = undefined
-        let _hint = undefined
-        let _optional
-        let _disabled
-        let _input = input
-
-        // parse generic options from input object
-        if (typeof input === 'object' && !Array.isArray(input)) {
-          const { render, label, optional, disabled, hint, ...rest } = input
-          _label = label
-          _render = render
-          _input = rest
-          _optional = optional
-          _disabled = disabled
-          _hint = hint
-        }
-        const normalizedInput = normalizeInput(_input, newPath)
-        // normalizeInput can return false if the input is not recognized.
+        const normalizedInput = normalizeInput(rawInput, key, newPath, data)
         if (normalizedInput) {
-          data[newPath] = normalizedInput
-          data[newPath].key = key
-          data[newPath].label = _label ?? key
-          data[newPath].hint = _hint
-          if (!(input.type in SpecialInputTypes)) {
-            data[newPath].optional = _optional ?? false
-            data[newPath].disabled = _disabled ?? false
-          }
-          if (typeof _render === 'function') data[newPath].render = _render
+          const { type, options, input } = normalizedInput
+          // @ts-ignore
+          const { onChange, ..._options } = options
+          data[newPath] = { type, ..._options, ...input }
+          mappedPaths[key] = { path: newPath, onChange }
+        } else {
+          warn(LevaErrors.UNKNOWN_INPUT, newPath, rawInput)
         }
       }
     })
@@ -264,7 +261,7 @@ export const Store = (function (this: StoreType) {
   }
 
   this.getDataFromSchema = (schema) => {
-    const mappedPaths: Record<string, string> = {}
+    const mappedPaths: MappedPaths = {}
     const data = _getDataFromSchema(schema, '', mappedPaths)
     return [data, mappedPaths]
   }

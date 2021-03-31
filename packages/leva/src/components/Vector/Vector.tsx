@@ -1,7 +1,7 @@
-import React from 'react'
+import React, { useRef, useCallback } from 'react'
 import { useInputContext } from '../../context'
 import { styled } from '../../styles'
-import { useValue } from '../../hooks'
+import { useInputSetters } from '../../hooks'
 import { sanitizeValue } from '../../utils'
 import { Number } from '../Number'
 import type { CoordinateProps, VectorProps } from './vector-types'
@@ -12,12 +12,21 @@ function Coordinate<T extends Record<string, number>>({
   valueKey,
   settings,
   onUpdate,
-  hideLabel,
+  innerLabelTrim,
 }: CoordinateProps<T>) {
-  const args = { type: 'NUMBER', value: value[valueKey], settings }
-  const setValue = (newValue: any) => onUpdate({ [valueKey]: sanitizeValue(args, newValue) })
+  // TODO make this better
 
-  const number = useValue({ ...args, setValue })
+  const valueRef = useRef(value[valueKey])
+  valueRef.current = value[valueKey]
+
+  const setValue = useCallback(
+    (newValue: any) =>
+      // @ts-expect-error
+      onUpdate({ [valueKey]: sanitizeValue({ type: 'NUMBER', value: valueRef.current, settings }, newValue) }),
+    [onUpdate, settings, valueKey]
+  )
+
+  const number = useInputSetters({ type: 'NUMBER', value: value[valueKey], settings, setValue })
 
   return (
     <Number
@@ -28,7 +37,7 @@ function Coordinate<T extends Record<string, number>>({
       onUpdate={number.onUpdate}
       onChange={number.onChange}
       settings={settings}
-      hideLabel={hideLabel}
+      innerLabelTrim={innerLabelTrim}
     />
   )
 }
@@ -76,7 +85,7 @@ export function Vector<T extends Record<string, number>>({
   value,
   onUpdate,
   settings,
-  hideNumberLabels,
+  innerLabelTrim,
 }: VectorProps<T>) {
   const { id, setSettings } = useInputContext()
 
@@ -94,7 +103,7 @@ export function Vector<T extends Record<string, number>>({
           value={value}
           settings={settings[key]}
           onUpdate={onUpdate}
-          hideLabel={hideNumberLabels}
+          innerLabelTrim={innerLabelTrim}
         />
       ))}
     </Container>

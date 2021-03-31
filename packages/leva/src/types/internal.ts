@@ -3,8 +3,11 @@ import type { SpecialInput, RenderFn, FolderSettings, Plugin } from './public'
 
 export type State = { data: Data }
 
+export type MappedPaths = Record<string, { path: string; onChange: (value: any) => void }>
+
 export type StoreType = {
   useStore: UseStore<State>
+  storeId: string
   orderPaths: (paths: string[]) => string[]
   setOrderedPaths: (newPaths: string[]) => void
   disposePaths: (paths: string[]) => void
@@ -12,33 +15,37 @@ export type StoreType = {
   getVisiblePaths: () => string[]
   getFolderSettings: (path: string) => FolderSettings
   getData: () => Data
-  addData: (newData: Data) => void
+  addData: (newData: Data, override: boolean) => void
   setValueAtPath: (path: string, value: any) => void
   setSettingsAtPath: (path: string, settings: any) => void
   disableInputAtPath: (path: string, flag: boolean) => void
   // TODO possibly better type this
   set: (values: Record<string, any>) => void
   get: (path: string) => any
-  getDataFromSchema: (schema: any) => [Data, Record<string, string>]
+  getDataFromSchema: (schema: any) => [Data, MappedPaths]
 }
 
-type Decorators = {
-  count: number
+export type CommonOptions = {
   key: string
-  label: string
+  label: string | JSX.Element
   hint?: string
   render?: RenderFn
 }
 
-export type DataInput = {
-  type: string
-  value: unknown
+export type DataInputOptions = CommonOptions & {
   optional: boolean
   disabled: boolean
-  settings?: object
-} & Decorators
+  onChange?: (value: unknown) => void
+}
 
-export type DataItem = DataInput | (SpecialInput & Decorators)
+export type DataInput = {
+  __refCount: number
+  type: string
+  value: unknown
+  settings?: object
+} & DataInputOptions
+
+export type DataItem = DataInput | (SpecialInput & CommonOptions & { __refCount: number })
 
 export type Data = Record<string, DataItem>
 

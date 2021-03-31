@@ -5,11 +5,11 @@ import type { Data, DataItem } from '../types'
 
 const getInputAtPath = (data: Data, path: string) => {
   if (!data[path]) return null
-  const { count, ...input } = data[path]
+  const { __refCount, ...input } = data[path]
   return input
 }
 
-type Input = Omit<DataItem, 'count'>
+type Input = Omit<DataItem, '__refCount'>
 
 /**
  * Return all input (value and settings) properties at a given path.
@@ -18,7 +18,10 @@ type Input = Omit<DataItem, 'count'>
  */
 export function useInput(
   path: string
-): [Input | null, { set: (value: any) => void; setSettings: (value: any) => void; disable: (flag: boolean) => void }] {
+): [
+  Input | null,
+  { set: (value: any) => void; setSettings: (value: any) => void; disable: (flag: boolean) => void; storeId: string }
+] {
   const store = useStoreContext()
   const [state, setState] = useState<Input | null>(getInputAtPath(store.getData(), path))
 
@@ -32,5 +35,5 @@ export function useInput(
     return () => unsub()
   }, [store, path])
 
-  return [state, { set, setSettings, disable }]
+  return [state, { set, setSettings, disable, storeId: store.storeId }]
 }

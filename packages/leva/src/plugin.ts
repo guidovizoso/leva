@@ -1,9 +1,18 @@
 import { warn, LevaErrors } from './utils/log'
-import type { Plugin, CustomInput, InputWithSettings, InternalPlugin } from './types'
+import type {
+  Plugin,
+  CustomInput,
+  InputWithSettings,
+  InternalPlugin,
+  StoreType,
+  Data,
+  LevaInputs,
+  InputOptions,
+} from './types'
 
 const Schemas: ((v: any, settings?: any) => false | string)[] = []
 
-export const Plugins: Record<string, Omit<Plugin<any, any, any>, 'schema'>> = {}
+export const Plugins: Record<string, Plugin<any, any, any>> = {}
 
 export function getValueType({ value, ...settings }: any) {
   for (let checker of Schemas) {
@@ -20,7 +29,7 @@ export function getValueType({ value, ...settings }: any) {
  * @param plugin
  */
 export function register<Input, Value, InternalSettings, Settings>(
-  type: string,
+  type: LevaInputs,
   { schema, ...plugin }: InternalPlugin<Input, Value, Settings, InternalSettings>
 ) {
   if (type in Plugins) {
@@ -43,6 +52,8 @@ export function createInternalPlugin<Input, Value, InternalSettings, Settings>(
   return plugin
 }
 
+type PluginInput<Input> = Input extends object ? Input & InputOptions : Input
+
 /**
  * This function should be used by custom plugins. It is mostly used as a way
  * to properly type the input return value.
@@ -52,18 +63,36 @@ export function createInternalPlugin<Input, Value, InternalSettings, Settings>(
 export function createPlugin<Input, Value, InternalSettings>(plugin: Plugin<Input, Value, InternalSettings>) {
   const type = getUniqueType()
   Plugins[type] = plugin
-  return (input?: Input) => ({ type, ...input } as CustomInput<Value>)
+  return (input?: PluginInput<Input>) => {
+    return ({ type, __customInput: input } as unknown) as CustomInput<Value>
+  }
 }
 
-export function normalize<V, Settings extends object = {}>(type: string, input: InputWithSettings<V, Settings>) {
+export function normalize<V, Settings extends object = {}>(
+  type: string,
+  input: InputWithSettings<V, Settings>,
+  path: string,
+  data: Data
+) {
   const { normalize: _normalize } = Plugins[type]
-  if (_normalize) return _normalize(input)
-  return input
+  if (_normalize) return _normalize(input, path, data)
+
+  if (typeof input !== 'object' || !('value' in input)) return { value: input }
+
+  const { value, ...settings } = input
+  return { value, settings }
 }
 
-export function sanitize<Settings extends object>(type: string, value: any, settings?: Settings, prevValue?: any) {
+export function sanitize<Settings extends object | undefined>(
+  type: string,
+  value: any,
+  settings: Settings,
+  prevValue: any,
+  path: string,
+  store: StoreType
+) {
   const { sanitize } = Plugins[type]
-  if (sanitize) return sanitize(value, settings, prevValue)
+  if (sanitize) return sanitize(value, settings, prevValue, path, store)
   return value
 }
 
